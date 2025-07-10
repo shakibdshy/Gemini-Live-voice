@@ -27,6 +27,10 @@ export default function App() {
   const [userTranscript, setUserTranscript] = useState('');
   const [geminiResponse, setGeminiResponse] = useState(''); // Used for status messages
   const [error, setError] = useState<string | null>(null);
+  const [toolCalls, setToolCalls] = useState<any[]>([]);
+  const [toolResponses, setToolResponses] = useState<string[]>([]);
+  const [isUsingTools, setIsUsingTools] = useState(false);
+  const [ledgerData, setLedgerData] = useState<any>(null);
 
   // Audio recording refs
   const recorderAudioContextRef = useRef<AudioContext | null>(null);
@@ -70,6 +74,10 @@ export default function App() {
     setUserTranscript('');
     setGeminiResponse('');
     setError(null);
+    setToolCalls([]);
+    setToolResponses([]);
+    setIsUsingTools(false);
+    setLedgerData(null);
 
     // Stop recording
     if (streamRef.current) {
@@ -288,6 +296,25 @@ const interruptCallbackRef = useRef<() => void>(() => {});
         }
         addAudioChunkToQueue(audioData);
       },
+      onToolCall: (toolCall) => {
+        setIsUsingTools(true);
+        setToolCalls(prev => [...prev, toolCall]);
+        setGeminiResponse('Using financial tools...');
+      },
+      onToolResponse: (response) => {
+        setToolResponses(prev => [...prev, response]);
+        setIsUsingTools(false);
+        
+        // Parse and extract ledger data if it's a general ledger report
+        try {
+          const parsedResponse = JSON.parse(response.replace('Tool fetch_general_ledger_report executed: ', ''));
+          if (parsedResponse.report_type === 'General Ledger Report' && parsedResponse.entries) {
+            setLedgerData(parsedResponse);
+          }
+        } catch (e) {
+          // Not a JSON response or not ledger data, ignore
+        }
+      },
     }).catch(e => {
         setError("Could not connect to the service.");
         endConversation();
@@ -315,8 +342,8 @@ const interruptCallbackRef = useRef<() => void>(() => {});
   return (
     <div className="flex flex-col items-center justify-between min-h-screen w-full bg-gray-900 text-gray-100 p-4 md:p-8">
       <header className="w-full max-w-4xl text-center">
-        <h1 className="text-4xl md:text-5xl font-bold text-white">Gemini Live</h1>
-        <p className="text-lg text-gray-400 mt-2">Click the mic to start a live conversation with Gemini.</p>
+        <h1 className="text-4xl md:text-5xl font-bold text-white">FM & Accounting Assistant</h1>
+        <p className="text-lg text-gray-400 mt-2">Your AI-powered Financial Management and Accounting Assistant with advanced calculation tools.</p>
       </header>
       
       <main className="flex flex-col items-center justify-center w-full max-w-4xl flex-grow my-8 space-y-6">
@@ -325,9 +352,135 @@ const interruptCallbackRef = useRef<() => void>(() => {});
             <p className="text-lg">{userTranscript || '...'}</p>
         </div>
         <div ref={geminiResponseContainerRef} className="w-full h-48 bg-gray-800/50 rounded-lg p-4 overflow-y-auto border border-gray-700 shadow-inner">
-            <p className="text-blue-400 italic">Gemini says:</p>
+            <p className="text-blue-400 italic">Assistant says:</p>
             <p className="text-lg whitespace-pre-wrap">{geminiResponse || '...'}</p>
+            {isUsingTools && (
+              <div className="mt-2 flex items-center text-yellow-400">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400 mr-2"></div>
+                <span className="text-sm">Processing with financial tools...</span>
+              </div>
+            )}
         </div>
+        
+        {/* General Ledger Report Table */}
+        {ledgerData && ledgerData.entries && (
+          <div className="w-full bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-blue-400 font-semibold flex items-center">
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" clipRule="evenodd" />
+                </svg>
+                {ledgerData.report_type}
+              </h3>
+              <button 
+                onClick={() => setLedgerData(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="bg-gray-800/50 rounded p-3">
+                <p className="text-gray-400">Total Entries</p>
+                <p className="text-white font-semibold">{ledgerData.total_entries}</p>
+              </div>
+              <div className="bg-gray-800/50 rounded p-3">
+                <p className="text-gray-400">Date Range</p>
+                <p className="text-white font-semibold">{ledgerData.date_range.from} - {ledgerData.date_range.to}</p>
+              </div>
+              <div className="bg-gray-800/50 rounded p-3">
+                <p className="text-gray-400">Account Filter</p>
+                <p className="text-white font-semibold">{ledgerData.account_filter}</p>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-600">
+                    <th className="text-left py-2 px-3 text-gray-300">Date</th>
+                    <th className="text-left py-2 px-3 text-gray-300">Account</th>
+                    <th className="text-right py-2 px-3 text-gray-300">Debit</th>
+                    <th className="text-right py-2 px-3 text-gray-300">Credit</th>
+                    <th className="text-right py-2 px-3 text-gray-300">Balance</th>
+                    <th className="text-left py-2 px-3 text-gray-300">Voucher Type</th>
+                    <th className="text-left py-2 px-3 text-gray-300">Voucher No</th>
+                  </tr>
+                </thead>
+                <tbody className="max-h-64 overflow-y-auto">
+                  {ledgerData.entries.map((entry: any, index: number) => (
+                    <tr key={index} className="border-b border-gray-700/50 hover:bg-gray-800/30">
+                      <td className="py-2 px-3 text-gray-200">{entry.postingDate}</td>
+                      <td className="py-2 px-3 text-gray-200">{entry.account}</td>
+                      <td className="py-2 px-3 text-right text-green-400">${entry.debit}</td>
+                      <td className="py-2 px-3 text-right text-red-400">${entry.credit}</td>
+                      <td className="py-2 px-3 text-right text-blue-400">${entry.balance}</td>
+                      <td className="py-2 px-3 text-gray-200">{entry.voucherType}</td>
+                      <td className="py-2 px-3 text-gray-200">{entry.voucherNo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {ledgerData.summary && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm border-t border-gray-600 pt-4">
+                <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
+                  <p className="text-green-400">Total Debits</p>
+                  <p className="text-white font-semibold">${ledgerData.summary.total_debits}</p>
+                </div>
+                <div className="bg-red-900/20 border border-red-500/30 rounded p-3">
+                  <p className="text-red-400">Total Credits</p>
+                  <p className="text-white font-semibold">${ledgerData.summary.total_credits}</p>
+                </div>
+                <div className="bg-blue-900/20 border border-blue-500/30 rounded p-3">
+                  <p className="text-blue-400">Net Balance</p>
+                  <p className="text-white font-semibold">${ledgerData.summary.net_balance}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Tool Activity Panel */}
+        {(toolCalls.length > 0 || toolResponses.length > 0) && (
+          <div className="w-full bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+            <h3 className="text-green-400 font-semibold mb-2 flex items-center">
+              <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              </svg>
+              Financial Tools Activity
+            </h3>
+            
+            {toolCalls.length > 0 && (
+              <div className="mb-3">
+                <p className="text-sm text-gray-300 mb-1">Tools Used:</p>
+                {toolCalls.map((toolCall, index) => (
+                  <div key={index} className="text-sm bg-gray-800/50 rounded p-2 mb-1">
+                    {toolCall.functionCalls?.map((fc: any, fcIndex: number) => (
+                      <div key={fcIndex} className="text-green-300">
+                        📊 {fc.name.replace(/_/g, ' ').toUpperCase()}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {toolResponses.length > 0 && !ledgerData && (
+              <div>
+                <p className="text-sm text-gray-300 mb-1">Latest Calculation:</p>
+                <div className="text-xs bg-gray-800/50 rounded p-2 max-h-32 overflow-y-auto">
+                  <pre className="text-green-200 whitespace-pre-wrap">{toolResponses[toolResponses.length - 1]}</pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        
         {error && <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded-lg text-center">{error}</div>}
       </main>
 
