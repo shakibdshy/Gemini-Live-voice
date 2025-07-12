@@ -347,7 +347,8 @@ const fetchGeneralLedgerReport = async (params: any) => {
         if (date_to) queryParams.append('endDate', date_to);
         if (account_filter) queryParams.append('account_filter', account_filter);
         
-        const url = `${process.env.API_URL}/accountingreport/general-ledger-report?${queryParams.toString()}`;
+        const url = `${process.env.API_BASE_URL}/accountingreport/general-ledger-report?${queryParams.toString()}`;
+
         
         const response = await fetch(url, {
             method: 'GET',
